@@ -1,0 +1,36 @@
+name: Check server
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check status
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          ADDRESS: ${{ secrets.SERVER_ADDRESS }}
+        run: |
+          now=$(curl -s "https://api.mcsrvstat.us/3/$ADDRESS" | jq -r '.online')
+          [ "$now" = "true" ] || now=false
+          last=$(cat state.txt 2>/dev/null || echo "")
+          if [ -n "$last" ] && [ "$now" != "$last" ]; then
+            if [ "$now" = "true" ]; then
+              curl -s -H "Content-Type: application/json" \
+                -d '{"content":"@everyone 🟢 BeeWarmnCozy is on"}' "$WEBHOOK"
+            else
+              curl -s -H "Content-Type: application/json" \
+                -d '{"content":"🔴 BeeWarmnCozy is off","flags":4096}' "$WEBHOOK"
+            fi
+          fi
+          echo "$now" > state.txt
+      - name: Save state
+        run: |
+          git config user.name "status-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add state.txt
+          git diff --staged --quiet || (git commit -m "update state" && git push)
